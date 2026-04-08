@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback } from "react";
-import { Link } from "react-router";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { Link, useNavigate } from "react-router";
+import { apiUrl, authJsonHeaders, getAuthToken } from "../lib/api";
 import {
   ArrowLeft,
   Activity,
@@ -8,16 +9,26 @@ import {
   Users,
   Calendar,
   Search,
-  Filter,
   Download,
   Eye,
   X,
   Heart,
   CheckCircle,
   BarChart3,
+  ListChecks,
 } from "lucide-react";
 
 type RiskLevel = "low" | "medium" | "high";
+
+type ScreeningPolarity = "ijobiy" | "salbiy" | "neutral";
+
+interface ScreeningQA {
+  block?: string;
+  question: string;
+  answer: string;
+  /** Chap ustun: ijobiy, o'ng ustun: salbiy; demografiya/ko'rsatkichlar: neutral */
+  polarity: ScreeningPolarity;
+}
 
 interface Patient {
   id: string;
@@ -29,86 +40,45 @@ interface Patient {
   date: string;
   summary: string;
   redFlags: string[];
-  medications: string[];
   conditions: string[];
+  screeningQa?: ScreeningQA[];
+  /** Serverda qabul vaqti (mavjud bo'lsa) */
+  acceptedAt?: string | null;
 }
 
-const mockPatients: Patient[] = [
-  {
-    id: "12845",
-    name: "Anvar Usmanov",
-    age: 45,
-    gender: "Erkak",
-    riskLevel: "low",
-    score: 2.3,
-    date: "2026-04-05",
-    summary:
-      "Bemorda yengil gipertoniya tarixi mavjud, ammo hozirda barqaror holda. Oilada yurak kasalliklari mavjud. Jismoniy faollik o'rtacha darajada. Chekuvchi emas, qandli diabet yo'q.",
-    redFlags: ["Oilada yurak kasalliklari tarixi"],
-    medications: ["Enalapril 10mg"],
-    conditions: ["Gipertoniya I daraja"],
-  },
-  {
-    id: "12846",
-    name: "Dilnoza Karimova",
-    age: 52,
-    gender: "Ayol",
-    riskLevel: "high",
-    score: 8.7,
-    date: "2026-04-05",
-    summary:
-      "Bemorda qandli diabet 2-turi va gipertoniya II daraja mavjud. So'nggi 3 oyda ko'krak og'rig'i va nafas qisilishi shikoyatlari. NYHA II funktsional sinf. Zudlik bilan EKG va koronarografiya tavsiya etiladi.",
-    redFlags: [
-      "Ko'krak og'rig'i (anginal xarakter)",
-      "Nafas qisilishi",
-      "Qandli diabet + Gipertoniya kombinatsiyasi",
-    ],
-    medications: ["Metformin 1000mg", "Amlodipine 10mg", "Aspirin 100mg"],
-    conditions: ["Qandli diabet 2-tur", "Gipertoniya II daraja", "Yurak yetishmovchiligi (NYHA II)"],
-  },
-  {
-    id: "12847",
-    name: "Sardor Rahimov",
-    age: 38,
-    gender: "Erkak",
-    riskLevel: "medium",
-    score: 4.2,
-    date: "2026-04-04",
-    summary:
-      "Bemor kuniga 15 sigaret chekadi, jismoniy faollik past. BMI 28 (ortiqcha vazn). Oilada erta infarkt tarixi (otasi 50 yoshda). Lipid spektri tekshiruvi tavsiya etiladi.",
-    redFlags: ["Chekish (15 sig/kun)", "Oilada erta infarkt tarixi", "Ortiqcha vazn"],
-    medications: [],
-    conditions: ["Ortiqcha vazn (BMI 28)"],
-  },
-  {
-    id: "12848",
-    name: "Nigora Saidova",
-    age: 29,
-    gender: "Ayol",
-    riskLevel: "low",
-    score: 0.8,
-    date: "2026-04-04",
-    summary:
-      "Sog'lom yosh bemor. Hech qanday surunkali kasallik yo'q. Jismoniy faollik yuqori darajada. Profilaktik ko'rik maqsadida murojaat qilgan.",
-    redFlags: [],
-    medications: [],
-    conditions: [],
-  },
-  {
-    id: "12849",
-    name: "Bobur Tursunov",
-    age: 61,
-    gender: "Erkak",
-    riskLevel: "high",
-    score: 9.2,
-    date: "2026-04-03",
-    summary:
-      "Bemorda o'tgan infarkt tarixi (2 yil oldin). Hozirda stabil stenokardiya. Aritmiya epizodlari qayd etilgan. Antikoagulyant terapiya qabul qilmoqda. Muntazam kardiomonitoring zarur.",
-    redFlags: ["O'tgan infarkt", "Aritmiya epizodlari", "Stabil stenokardiya"],
-    medications: ["Aspirin 100mg", "Klopidogrel 75mg", "Atorvastatin 40mg", "Bisoprolol 5mg"],
-    conditions: ["IYuK: Stabil stenokardiya", "O'tgan infarkt", "Aritmiya"],
-  },
-];
+interface ScreeningApiRow {
+  id: string;
+  patientName: string | null;
+  answers: Record<number, unknown>;
+  score2: number;
+  riskLevel: RiskLevel;
+  createdAt: string;
+  summary: string;
+  redFlags: string[];
+  conditions: string[];
+  screeningQa?: ScreeningQA[];
+  acceptedAt: string | null;
+}
+
+function screeningToPatient(row: ScreeningApiRow): Patient {
+  const age = Number(row.answers?.[1]) || 0;
+  const gender = String(row.answers?.[2] ?? "—");
+  const name = row.patientName?.trim() || `Bemor ${row.id.slice(-6)}`;
+  return {
+    id: row.id,
+    name,
+    age,
+    gender,
+    riskLevel: row.riskLevel,
+    score: row.score2,
+    date: row.createdAt.slice(0, 10),
+    summary: row.summary,
+    redFlags: row.redFlags ?? [],
+    conditions: row.conditions ?? [],
+    screeningQa: row.screeningQa,
+    acceptedAt: row.acceptedAt,
+  };
+}
 
 const riskStyles: Record<RiskLevel, string> = {
   low: "bg-green-100 text-green-700 border-green-200",
@@ -136,32 +106,175 @@ function RiskBadge({ level }: { level: RiskLevel }) {
   );
 }
 
+function formatUzDateTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleString("uz-UZ", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
+
 export function DoctorDashboard() {
+  const navigate = useNavigate();
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterRisk, setFilterRisk] = useState<RiskLevel | "all">("all");
+  const [viewMode, setViewMode] = useState<"mijoz" | "tarix">("mijoz");
+
+  useEffect(() => {
+    if (!getAuthToken()) {
+      navigate("/", { replace: true });
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    fetch(apiUrl("/api/screenings"), { headers: authJsonHeaders() })
+      .then(async (r) => {
+        if (r.status === 401) {
+          navigate("/", { replace: true });
+          return;
+        }
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || "Ma'lumot yuklanmadi");
+        if (!cancelled && data.ok && Array.isArray(data.screenings)) {
+          setPatients(data.screenings.map((s: ScreeningApiRow) => screeningToPatient(s)));
+        }
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setLoadError(e.message || "Tarmoq xatosi");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
+
+  const finalizeAcceptance = useCallback(
+    async (id: string) => {
+      const p = patients.find((x) => x.id === id);
+      if (p?.acceptedAt) return;
+      try {
+        const r = await fetch(apiUrl(`/api/screenings/${encodeURIComponent(id)}/accept`), {
+          method: "PATCH",
+          headers: authJsonHeaders(),
+        });
+        if (r.status === 401) {
+          navigate("/", { replace: true });
+          return;
+        }
+        const data = await r.json();
+        if (data.ok && data.screening) {
+          const updated = screeningToPatient(data.screening as ScreeningApiRow);
+          setPatients((prev) => prev.map((x) => (x.id === id ? updated : x)));
+          setSelectedPatient((cur) => (cur?.id === id ? updated : cur));
+        }
+      } catch {
+        /* noop */
+      }
+    },
+    [patients, navigate]
+  );
+
+  useEffect(() => {
+    if (!selectedPatient) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [selectedPatient]);
 
   const filteredPatients = useMemo(
     () =>
-      mockPatients.filter((p) => {
-        const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
-        const matchesRisk = filterRisk === "all" || p.riskLevel === filterRisk;
-        return matchesSearch && matchesRisk;
-      }),
-    [searchTerm, filterRisk]
+      patients.filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase())),
+    [patients, searchTerm]
   );
+
+  const displayedPatients = useMemo(() => {
+    if (viewMode === "tarix") {
+      return [...filteredPatients]
+        .filter((p) => p.acceptedAt)
+        .sort((a, b) => (b.acceptedAt ?? "").localeCompare(a.acceptedAt ?? ""));
+    }
+    return filteredPatients.filter((p) => !p.acceptedAt);
+  }, [viewMode, filteredPatients]);
+
+  const tableEmptyMessage = useMemo(() => {
+    if (viewMode === "tarix") {
+      return "Tarixda qabul qilingan bemorlar yo'q";
+    }
+    if (filteredPatients.length === 0) {
+      return "Hozircha skrininglar yo'q — bemorga /questionnaire havolasini yuboring";
+    }
+    if (filteredPatients.every((p) => p.acceptedAt)) {
+      return "Navbatdagi bemorlar yo'q — barchasi qabul qilingan (Tarix bo'limida)";
+    }
+    return "Bemorlar topilmadi";
+  }, [viewMode, filteredPatients]);
 
   const closeModal = useCallback(() => setSelectedPatient(null), []);
 
-  const stats = useMemo(
-    () => [
-      { label: "Bugungi bemorlar", value: "5", icon: Users, colorBg: "bg-blue-100", colorIcon: "text-blue-600" },
-      { label: "Yuqori xavf", value: "2", icon: AlertCircle, colorBg: "bg-red-100", colorIcon: "text-red-600" },
-      { label: "O'rtacha SCORE2", value: "5.0%", icon: BarChart3, colorBg: "bg-green-100", colorIcon: "text-green-600" },
-      { label: "Kutilayotgan", value: "3", icon: Calendar, colorBg: "bg-purple-100", colorIcon: "text-purple-600" },
-    ],
-    []
-  );
+  const screeningColumns = useMemo(() => {
+    const q = selectedPatient?.screeningQa;
+    if (!q?.length) return null;
+    return {
+      ijobiy: q.filter((x) => x.polarity === "ijobiy"),
+      salbiy: q.filter((x) => x.polarity === "salbiy"),
+      neutral: q.filter((x) => x.polarity === "neutral"),
+    };
+  }, [selectedPatient]);
+
+  const stats = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const queue = patients.filter((p) => !p.acceptedAt);
+    const todayCount = patients.filter((p) => p.date === today).length;
+    const high = queue.filter((p) => p.riskLevel === "high").length;
+    const avg =
+      queue.length > 0
+        ? (queue.reduce((a, p) => a + p.score, 0) / queue.length).toFixed(1)
+        : "—";
+    return [
+      {
+        label: "Bugungi skrining",
+        value: String(todayCount),
+        icon: Users,
+        colorBg: "bg-blue-100",
+        colorIcon: "text-blue-600",
+      },
+      {
+        label: "Navbat: yuqori xavf",
+        value: String(high),
+        icon: AlertCircle,
+        colorBg: "bg-red-100",
+        colorIcon: "text-red-600",
+      },
+      {
+        label: "Navbat: o'rtacha SCORE2",
+        value: avg === "—" ? "—" : `${avg}%`,
+        icon: BarChart3,
+        colorBg: "bg-green-100",
+        colorIcon: "text-green-600",
+      },
+      {
+        label: "Kutilayotgan (navbat)",
+        value: String(queue.length),
+        icon: Calendar,
+        colorBg: "bg-purple-100",
+        colorIcon: "text-purple-600",
+      },
+    ];
+  }, [patients]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -181,7 +294,7 @@ export function DoctorDashboard() {
                 <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center">
                   <Heart className="w-4 h-4 text-white" />
                 </div>
-                <span className="text-gray-900">Shifokor-LDA</span>
+                <span className="text-gray-900">ShifokorLDA</span>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -204,22 +317,12 @@ export function DoctorDashboard() {
         <div className="mb-8">
           <h1 className="text-3xl text-gray-900 mb-2">Shifokr Dashboard</h1>
           <p className="text-gray-600">AI tahlil qilingan bemorlar ro'yxati va hisobotlar</p>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
-          {stats.map((stat, idx) => (
-            <div key={idx} className="bg-white rounded-xl p-5 border border-gray-200 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-3">
-                <div className={`w-12 h-12 ${stat.colorBg} rounded-xl flex items-center justify-center`}>
-                  <stat.icon className={`w-6 h-6 ${stat.colorIcon}`} />
-                </div>
-                <TrendingUp className="w-4 h-4 text-green-400" />
-              </div>
-              <div className="text-2xl text-gray-900 mb-1">{stat.value}</div>
-              <div className="text-sm text-gray-600">{stat.label}</div>
-            </div>
-          ))}
+          {loading ? <p className="text-sm text-gray-500 mt-2">Ma&apos;lumotlar yuklanmoqda...</p> : null}
+          {loadError ? (
+            <p className="text-sm text-red-600 mt-2" role="alert">
+              {loadError}
+            </p>
+          ) : null}
         </div>
 
         {/* Search & Filter */}
@@ -236,29 +339,28 @@ export function DoctorDashboard() {
               />
             </div>
             <div className="flex gap-2">
-              {(["all", "low", "medium", "high"] as const).map((level) => (
-                <button
-                  key={level}
-                  onClick={() => setFilterRisk(level)}
-                  className={`px-4 py-2 rounded-lg text-sm transition-all border ${
-                    filterRisk === level
-                      ? level === "all"
-                        ? "bg-gray-800 text-white border-gray-800"
-                        : level === "low"
-                        ? "bg-green-100 text-green-700 border-green-300"
-                        : level === "medium"
-                        ? "bg-yellow-100 text-yellow-700 border-yellow-300"
-                        : "bg-red-100 text-red-700 border-red-300"
-                      : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
-                  }`}
-                >
-                  {level === "all" ? (
-                    <span className="flex items-center gap-1.5"><Filter className="w-4 h-4" />Barchasi</span>
-                  ) : (
-                    riskLabels[level]
-                  )}
-                </button>
-              ))}
+              <button
+                type="button"
+                onClick={() => setViewMode("mijoz")}
+                className={`px-4 py-2 rounded-lg text-sm transition-all border ${
+                  viewMode === "mijoz"
+                    ? "bg-emerald-600 text-white border-emerald-600"
+                    : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                }`}
+              >
+                Mijoz
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("tarix")}
+                className={`px-4 py-2 rounded-lg text-sm transition-all border ${
+                  viewMode === "tarix"
+                    ? "bg-gray-800 text-white border-gray-800"
+                    : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                }`}
+              >
+                Tarix
+              </button>
             </div>
           </div>
         </div>
@@ -273,19 +375,21 @@ export function DoctorDashboard() {
                   <th className="px-6 py-4 text-left text-sm text-gray-600">Yosh/Jins</th>
                   <th className="px-6 py-4 text-left text-sm text-gray-600">Xavf</th>
                   <th className="px-6 py-4 text-left text-sm text-gray-600">SCORE2</th>
-                  <th className="hidden sm:table-cell px-6 py-4 text-left text-sm text-gray-600">Sana</th>
+                  <th className="hidden sm:table-cell px-6 py-4 text-left text-sm text-gray-600">
+                    {viewMode === "tarix" ? "Qabul vaqti" : "Sana"}
+                  </th>
                   <th className="px-6 py-4 text-left text-sm text-gray-600">Amallar</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredPatients.length === 0 ? (
+                {displayedPatients.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
-                      Bemorlar topilmadi
+                      {tableEmptyMessage}
                     </td>
                   </tr>
                 ) : (
-                  filteredPatients.map((patient) => (
+                  displayedPatients.map((patient) => (
                     <tr key={patient.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -339,10 +443,13 @@ export function DoctorDashboard() {
                         </div>
                       </td>
                       <td className="hidden sm:table-cell px-6 py-4 text-gray-500 text-sm">
-                        {patient.date}
+                        {viewMode === "tarix" && patient.acceptedAt
+                          ? formatUzDateTime(patient.acceptedAt)
+                          : patient.date}
                       </td>
                       <td className="px-6 py-4">
                         <button
+                          type="button"
                           onClick={() => setSelectedPatient(patient)}
                           className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg hover:bg-emerald-100 transition-colors border border-emerald-200"
                         >
@@ -358,8 +465,24 @@ export function DoctorDashboard() {
           </div>
         </div>
 
+        {/* Stats — jadval ostida */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mt-8 mb-8">
+          {stats.map((stat, idx) => (
+            <div key={idx} className="bg-white rounded-xl p-5 border border-gray-200 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-3">
+                <div className={`w-12 h-12 ${stat.colorBg} rounded-xl flex items-center justify-center`}>
+                  <stat.icon className={`w-6 h-6 ${stat.colorIcon}`} />
+                </div>
+                <TrendingUp className="w-4 h-4 text-green-400" />
+              </div>
+              <div className="text-2xl text-gray-900 mb-1">{stat.value}</div>
+              <div className="text-sm text-gray-600">{stat.label}</div>
+            </div>
+          ))}
+        </div>
+
         {/* Quick Links */}
-        <div className="mt-6 grid sm:grid-cols-2 gap-4">
+        <div className="grid sm:grid-cols-2 gap-4">
           <Link
             to="/questionnaire"
             className="flex items-center gap-3 p-4 bg-white border border-emerald-200 rounded-xl hover:shadow-md hover:border-emerald-300 transition-all group"
@@ -387,39 +510,138 @@ export function DoctorDashboard() {
         </div>
       </div>
 
-      {/* Patient Detail Modal */}
+      {/* Bemor kartasi — to'liq ekran panel */}
       {selectedPatient && (
         <div
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50"
-          onClick={(e) => e.target === e.currentTarget && closeModal()}
+          className="fixed inset-0 z-50 flex flex-col bg-white"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="patient-panel-title"
         >
-          <div className="bg-white rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-            {/* Modal Header */}
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-              <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                  riskStyles[selectedPatient.riskLevel].split(" ")[0]
-                }`}>
+          {/* Panel sarlavhasi */}
+          <div className="flex-shrink-0 border-b border-gray-200 bg-white px-4 sm:px-6 lg:px-8 py-4 shadow-sm">
+            <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className={`w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    riskStyles[selectedPatient.riskLevel].split(" ")[0]
+                  }`}
+                >
                   <Activity className="w-6 h-6" />
                 </div>
-                <div>
-                  <h3 className="text-xl text-gray-900">{selectedPatient.name}</h3>
-                  <p className="text-sm text-gray-500">
+                <div className="min-w-0">
+                  <h3 id="patient-panel-title" className="text-xl text-gray-900 truncate">
+                    {selectedPatient.name}
+                  </h3>
+                  <p className="text-sm text-gray-500 truncate">
                     {selectedPatient.age} yosh, {selectedPatient.gender} • ID: {selectedPatient.id}
                   </p>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={closeModal}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                className="flex-shrink-0 p-2.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-xl transition-colors border border-transparent hover:border-gray-200"
                 aria-label="Yopish"
               >
                 <X className="w-6 h-6" />
               </button>
             </div>
+          </div>
 
-            <div className="p-6 space-y-6">
-              {/* Risk Assessment */}
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 pb-10">
+              {/* Skrining savol-javoblar — xavf baholashdan oldin */}
+              {screeningColumns && (
+                <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50/80 via-white to-blue-50/50 p-6 shadow-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                      <ListChecks className="w-5 h-5 text-emerald-700" />
+                    </div>
+                    <div>
+                      <h4 className="text-lg text-gray-900">Skrining: savol-javoblar</h4>
+                      <p className="text-sm text-gray-500">
+                        Chap: ijobiy javoblar · O&apos;ng: salbiy javoblar
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-4 lg:gap-6">
+                    {/* Chap — ijobiy */}
+                    <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50/50 overflow-hidden flex flex-col min-h-[120px]">
+                      <div className="flex items-center gap-2 px-4 py-3 bg-emerald-100/80 border-b border-emerald-200">
+                        <CheckCircle className="w-5 h-5 text-emerald-700 shrink-0" />
+                        <span className="text-sm font-semibold text-emerald-900">Ijobiy javoblar</span>
+                      </div>
+                      {screeningColumns.ijobiy.length === 0 ? (
+                        <p className="text-sm text-gray-500 px-4 py-6 text-center">Yo&apos;q</p>
+                      ) : (
+                        <ul className="divide-y divide-emerald-100 bg-white/80">
+                          {screeningColumns.ijobiy.map((row, idx) => (
+                            <li key={idx} className="px-4 py-3 sm:px-4 hover:bg-emerald-50/50 transition-colors">
+                              {row.block && (
+                                <span className="text-xs font-medium text-emerald-600 uppercase tracking-wide">
+                                  {row.block}
+                                </span>
+                              )}
+                              <p className="text-sm text-gray-700 mt-0.5 leading-snug">{row.question}</p>
+                              <p className="text-base text-emerald-900 font-semibold mt-1">{row.answer}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    {/* O'ng — salbiy */}
+                    <div className="rounded-xl border-2 border-rose-200 bg-rose-50/50 overflow-hidden flex flex-col min-h-[120px]">
+                      <div className="flex items-center gap-2 px-4 py-3 bg-rose-100/80 border-b border-rose-200">
+                        <AlertCircle className="w-5 h-5 text-rose-700 shrink-0" />
+                        <span className="text-sm font-semibold text-rose-900">Salbiy javoblar</span>
+                      </div>
+                      {screeningColumns.salbiy.length === 0 ? (
+                        <p className="text-sm text-gray-500 px-4 py-6 text-center">Yo&apos;q</p>
+                      ) : (
+                        <ul className="divide-y divide-rose-100 bg-white/80">
+                          {screeningColumns.salbiy.map((row, idx) => (
+                            <li key={idx} className="px-4 py-3 sm:px-4 hover:bg-rose-50/50 transition-colors">
+                              {row.block && (
+                                <span className="text-xs font-medium text-rose-600 uppercase tracking-wide">
+                                  {row.block}
+                                </span>
+                              )}
+                              <p className="text-sm text-gray-700 mt-0.5 leading-snug">{row.question}</p>
+                              <p className="text-base text-rose-900 font-semibold mt-1">{row.answer}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+
+                  {screeningColumns.neutral.length > 0 && (
+                    <div className="mt-4 rounded-xl border border-gray-200 bg-white/90 overflow-hidden">
+                      <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-sm font-medium text-gray-700">
+                        Boshqa ma&apos;lumotlar (demografiya va ko&apos;rsatkichlar)
+                      </div>
+                      <ul className="divide-y divide-gray-100">
+                        {screeningColumns.neutral.map((row, idx) => (
+                          <li key={idx} className="px-4 py-3 sm:px-5 hover:bg-gray-50/80 transition-colors">
+                            {row.block && (
+                              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                                {row.block}
+                              </span>
+                            )}
+                            <p className="text-sm text-gray-700 mt-0.5 leading-snug">{row.question}</p>
+                            <p className="text-base text-gray-900 font-medium mt-1">{row.answer}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Xavf baholash + AI xulosa (bir kartochkada) */}
               <div className="bg-gradient-to-br from-gray-50 to-white rounded-xl p-6 border border-gray-200">
                 <h4 className="text-lg text-gray-900 mb-4">Xavf baholash</h4>
                 <div className="grid sm:grid-cols-2 gap-4 mb-4">
@@ -432,7 +654,7 @@ export function DoctorDashboard() {
                     <div className="text-2xl text-gray-900">{selectedPatient.score}%</div>
                   </div>
                 </div>
-                <div>
+                <div className="mb-0">
                   <div className="text-sm text-gray-600 mb-2">Xavf vizualizatsiyasi</div>
                   <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
                     <div
@@ -441,14 +663,13 @@ export function DoctorDashboard() {
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* AI Summary */}
-              <div>
-                <h4 className="text-lg text-gray-900 mb-3">AI Xulosa</h4>
-                <p className="text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-xl border border-gray-200">
-                  {selectedPatient.summary}
-                </p>
+                <div className="border-t border-gray-200 pt-6 mt-6">
+                  <h4 className="text-lg text-gray-900 mb-3">AI Xulosa</h4>
+                  <p className="text-gray-700 leading-relaxed bg-white/90 p-4 rounded-xl border border-gray-200/80 shadow-sm">
+                    {selectedPatient.summary}
+                  </p>
+                </div>
               </div>
 
               {/* Red Flags */}
@@ -486,24 +707,6 @@ export function DoctorDashboard() {
                 </div>
               )}
 
-              {/* Medications */}
-              {selectedPatient.medications.length > 0 && (
-                <div>
-                  <h4 className="text-lg text-gray-900 mb-3">Dori-darmonlar</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedPatient.medications.map((med, idx) => (
-                      <span
-                        key={idx}
-                        className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm border border-green-200 flex items-center gap-1.5"
-                      >
-                        <CheckCircle className="w-3.5 h-3.5" />
-                        {med}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* No red flags */}
               {selectedPatient.redFlags.length === 0 && (
                 <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-xl">
@@ -514,10 +717,32 @@ export function DoctorDashboard() {
 
               {/* Actions */}
               <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-gray-200">
-                <button className="flex-1 px-6 py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:from-emerald-600 hover:to-emerald-700 transition-all shadow-lg">
-                  Qabulni boshlash
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedPatient.acceptedAt) return;
+                    void finalizeAcceptance(selectedPatient.id);
+                    window.setTimeout(() => closeModal(), 450);
+                  }}
+                  disabled={!!selectedPatient.acceptedAt}
+                  aria-pressed={!!selectedPatient.acceptedAt}
+                  title={
+                    selectedPatient.acceptedAt
+                      ? "Qabul yakunlangan — tarixda saqlangan"
+                      : "Bosilganda qabul tugaydi va tarixga yoziladi"
+                  }
+                  className={`flex-1 inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl transition-all shadow-lg border-2 ${
+                    selectedPatient.acceptedAt
+                      ? "bg-emerald-600 text-white border-emerald-600 cursor-not-allowed opacity-90"
+                      : "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white border-transparent hover:from-emerald-600 hover:to-emerald-700"
+                  }`}
+                >
+                  {selectedPatient.acceptedAt ? "Qabul qilindi" : "Qabul qilish"}
                 </button>
-                <button className="flex-1 px-6 py-3 bg-white text-emerald-600 border-2 border-emerald-500 rounded-xl hover:bg-emerald-50 transition-colors">
+                <button
+                  type="button"
+                  className="flex-1 px-6 py-3 bg-white text-emerald-600 border-2 border-emerald-500 rounded-xl hover:bg-emerald-50 transition-colors"
+                >
                   PDF hisobotni yuklash
                 </button>
               </div>

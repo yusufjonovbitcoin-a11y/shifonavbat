@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { Link } from "react-router";
 import {
   ArrowLeft,
@@ -7,102 +7,13 @@ import {
   Activity,
   AlertTriangle,
   Phone,
+  Loader2,
 } from "lucide-react";
 import { BodyMap } from "./BodyMap";
-
-interface Question {
-  id: number;
-  block: string;
-  type: "binary" | "scale" | "text" | "number" | "select" | "multiInput" | "bodyMap";
-  question: string;
-  options?: string[];
-  placeholder?: string;
-  fields?: { name: string; placeholder: string; type?: string }[];
-}
-
-// Questions defined outside component to avoid re-creation on each render
-const questions: Question[] = [
-  // Blok 1: Demografiya va Skrining (1-5)
-  { id: 1,  block: "Demografiya va Skrining", type: "number",   question: "Yoshingiz nechada?", placeholder: "Yoshingizni kiriting" },
-  { id: 2,  block: "Demografiya va Skrining", type: "select",   question: "Jinsingiz?", options: ["Erkak", "Ayol"] },
-  { id: 3,  block: "Demografiya va Skrining", type: "multiInput", question: "Vazningiz va bo'yingiz? (BMI hisoblash uchun)",
-    fields: [
-      { name: "weight", placeholder: "Vazn (kg)",  type: "number" },
-      { name: "height", placeholder: "Bo'y (sm)",  type: "number" },
-    ],
-  },
-  { id: 4,  block: "Demografiya va Skrining", type: "number",   question: "Odatda tinch holatda yurak urishingiz (puls) bir daqiqada nechta?", placeholder: "Puls (urish/min)" },
-  { id: 5,  block: "Demografiya va Skrining", type: "select",   question: "Oxirgi marta qachon EKG yoki UZI (ExoKG) tekshiruvidan o'tgansiz?",
-    options: ["1 oy ichida", "3 oy ichida", "6 oy ichida", "1 yil ichida", "1 yildan ko'p", "Hech qachon"],
-  },
-
-  // Blok 2: "Qizil bayroqchalar" (6-12) - WITH BODY MAP
-  { id: 6,  block: "Qizil bayroqchalar", type: "binary",  question: "Hozir ko'krak qafasida siquvchi, og'irlik yoki kuydiruvchi og'riq bormi?" },
-  { id: 7,  block: "Qizil bayroqchalar", type: "bodyMap", question: "Og'riq tanangiznig qaysi qismlariga tarqaladi? (Bosib ko'rsating)" },
-  { id: 8,  block: "Qizil bayroqchalar", type: "binary",  question: "Og'riq bilan birga kuchli sovuq ter bosishi kuzatildimi?" },
-  { id: 9,  block: "Qizil bayroqchalar", type: "binary",  question: "To'satdan paydo bo'lgan kuchli nafas qisishi bormi?" },
-  { id: 10, block: "Qizil bayroqchalar", type: "binary",  question: "Oxirgi vaqtlarda to'satdan hushingizdan ketish holatlari bo'ldimi?" },
-  { id: 11, block: "Qizil bayroqchalar", type: "binary",  question: "Oyoqlaringizda keskin paydo bo'lgan kuchli shish va og'riq bormi?" },
-  { id: 12, block: "Qizil bayroqchalar", type: "binary",  question: "Yurak urishi juda tezlashib (120+), bosh aylanishi bilan kuzatilyaptimi?" },
-
-  // Blok 3: Arterial qon bosimi (13-18)
-  { id: 13, block: "Arterial qon bosimi", type: "binary", question: "Sizda gipertoniya (qon bosimi ko'tarilishi) tashxisi bormi?" },
-  { id: 14, block: "Arterial qon bosimi", type: "text",   question: "Odatdagi (ishchi) qon bosimingiz necha?", placeholder: "Mis: 120/80" },
-  { id: 15, block: "Arterial qon bosimi", type: "binary", question: "Qon bosimingiz 140/90 dan tez-tez ko'tarilib turadimi?" },
-  { id: 16, block: "Arterial qon bosimi", type: "binary", question: "Qon bosimi ko'tarilganda bosh aylanishi yoki ko'ngil ayniши bo'ladimi?" },
-  { id: 17, block: "Arterial qon bosimi", type: "binary", question: "Boshning orqa (ensa) qismida og'irlik yoki og'riq sezasizmi?" },
-  { id: 18, block: "Arterial qon bosimi", type: "binary", question: "Qon bosimini tushiruvchi dorilarni muntazam ichасizmi?" },
-
-  // Blok 4: Yurak yetishmovchiligi va Nafas qisishi (19-25)
-  { id: 19, block: "Yurak yetishmovchiligi", type: "binary", question: "Oddiy yurishda (masalan, 100-200 metr) nafas qisishi seziladimi?" },
-  { id: 20, block: "Yurak yetishmovchiligi", type: "binary", question: "Zinadan 1-2 qavat ko'tarilganda to'xtab dam olishga ehtiyoj sezasizmi?" },
-  { id: 21, block: "Yurak yetishmovchiligi", type: "binary", question: "Kechasi yotib uxlaganda nafas qisishidan uyg'onib ketasizmi?" },
-  { id: 22, block: "Yurak yetishmovchiligi", type: "binary", question: "Past yostiqda yotish sizga noqulaylik tug'diradimi?" },
-  { id: 23, block: "Yurak yetishmovchiligi", type: "binary", question: "Oyoq to'piqlari sohasida kechqurun shishlar paydo bo'ladimi?" },
-  { id: 24, block: "Yurak yetishmovchiligi", type: "binary", question: "Tez charchash va doimiy holsizlik sizni bezovta qiladimi?" },
-  { id: 25, block: "Yurak yetishmovchiligi", type: "binary", question: "Quruq yo'tal (ayniqsa kechasi yotishda) bezovta qiladimi?" },
-
-  // Blok 5: Yurak ritmi va Stenokardiya (26-32)
-  { id: 26, block: "Yurak ritmi va Stenokardiya", type: "binary",  question: "Yuragingiz \"o'ynashi\", \"kinab qolishi\" yoki \"urib ketishi\"ni sezasizmi?" },
-  { id: 27, block: "Yurak ritmi va Stenokardiya", type: "binary",  question: "Yurak urishi bir tekis emasligini (aritmiya) his qilasizmi?" },
-  { id: 28, block: "Yurak ritmi va Stenokardiya", type: "binary",  question: "Ko'krakdagi og'riq asosan jismoniy harakat vaqtida paydo bo'ladimi?" },
-  { id: 29, block: "Yurak ritmi va Stenokardiya", type: "binary",  question: "Harakatni to'xtatganingizda og'riq 2-5 daqiqada o'tib ketadimi?" },
-  { id: 30, block: "Yurak ritmi va Stenokardiya", type: "binary",  question: "Sovuq havoda yurganda ko'krak sohasida noqulaylik seziladimi?" },
-  { id: 31, block: "Yurak ritmi va Stenokardiya", type: "binary",  question: "Og'riq paytida til ostiga Nitroglitserin qo'ysangiz ta'sir qiladimi?" },
-  { id: 32, block: "Yurak ritmi va Stenokardiya", type: "bodyMap", question: "Ko'krak qafasidagi og'riq qaerga tarqaladi?" },
-
-  // Blok 6: Xavf omillari va Irsiyat (33-40)
-  { id: 33, block: "Xavf omillari va Irsiyat", type: "select", question: "Tamaki mahsulotlarini chekasizmi?",
-    options: ["Yo'q, hech qachon chekmаganman", "Yo'q, tashladim (1 yildan ko'p)", "Yo'q, tashladim (1 yil ichida)", "Ha, chekaman"],
-  },
-  { id: 34, block: "Xavf omillari va Irsiyat", type: "binary", question: "Qandli diabet (shakar) kasalligingiz bormi?" },
-  { id: 35, block: "Xavf omillari va Irsiyat", type: "binary", question: "Qondagi xolesterin miqdori yuqoriligini bilasizmi?" },
-  { id: 36, block: "Xavf omillari va Irsiyat", type: "binary", question: "Ota-onangiz yoki yaqinlaringizda erta yoshda (55 yoshgacha) infarkt yoki insult bo'lganmi?" },
-  { id: 37, block: "Xavf omillari va Irsiyat", type: "binary", question: "Sizda buyrak kasalliklari bormi?" },
-  { id: 38, block: "Xavf omillari va Irsiyat", type: "binary", question: "Ilgari infarkt yoki insult o'tkazganmisiz?" },
-  { id: 39, block: "Xavf omillari va Irsiyat", type: "binary", question: "Yuragingizda stent yoki shunt bormi?" },
-  { id: 40, block: "Xavf omillari va Irsiyat", type: "select", question: "Spirtli ichimliklarni qay darajada iste'mol qilasiz?",
-    options: ["Hech qachon", "Oyiga 1-2 marta", "Haftada 1-2 marta", "Deyarli har kuni"],
-  },
-
-  // Blok 7: Turmush tarzi va Psixosomatika (41-50)
-  { id: 41, block: "Turmush tarzi va Psixosomatika", type: "number", question: "Kuniga o'rtacha necha soat uхlаysiz?", placeholder: "Soatlar soni" },
-  { id: 42, block: "Turmush tarzi va Psixosomatika", type: "scale",  question: "Ishingiz va hayotingizda stress darajasi qanday? (1-10 ball)" },
-  { id: 43, block: "Turmush tarzi va Psixosomatika", type: "binary", question: "Oxirgi vaqtlarda sabаbsiz xavotir yoki qo'rquv hissi bo'lyaptimi?" },
-  { id: 44, block: "Turmush tarzi va Psixosomatika", type: "select", question: "Ovqatlanishda tuzni ko'p iste'mol qilasizmi?",
-    options: ["Kam iste'mol qilаman", "O'rtacha", "Ko'p iste'mol qilаman"],
-  },
-  { id: 45, block: "Turmush tarzi va Psixosomatika", type: "number", question: "Haftada necha marta jismoniy mashqlar yoki faol yurish bilan shug'ullanasiz?", placeholder: "Marta/hafta" },
-  { id: 46, block: "Turmush tarzi va Psixosomatika", type: "select", question: "Oxirgi marta qachon umumiy qon tahlili topshirgansiz?",
-    options: ["3 oy ichida", "6 oy ichida", "1 yil ichida", "1 yildan ko'p", "Eslаy olmаyman"],
-  },
-  { id: 47, block: "Turmush tarzi va Psixosomatika", type: "text",   question: "Doimiy ravishda ichadigan barcha dorilar ro'yxatini bilasizmi?", placeholder: "Dorilar nomi (masalan: Aspirin, Enalapril...)" },
-  { id: 48, block: "Turmush tarzi va Psixosomatika", type: "text",   question: "Sizda allergik reaksiyalar bormi (ayniqsa dorilarga)?", placeholder: "Allergiya bo'lsa kiriting" },
-  { id: 49, block: "Turmush tarzi va Psixosomatika", type: "binary", question: "Ko'krak qafasidagi og'riq chuqur nafas olganda yoki tanani burgan daо'zgaradimi?" },
-  { id: 50, block: "Turmush tarzi va Psixosomatika", type: "scale",  question: "Hayot sifati: Hozirgi sog'lig'ingiz sizni necha foiz qoniqtiradi?" },
-];
-
-const TOTAL = questions.length;
+import { buildAnamnesisContext } from "../lib/formatQuestionnaireForAi";
+import { buildScreeningQa } from "../lib/screeningFromAnswers";
+import { apiUrl } from "../lib/api";
+import { CARDIO_QUESTIONS as questions, CARDIO_TOTAL as TOTAL } from "../data/cardioQuestionnaire";
 
 // Red flag question IDs
 const RED_FLAG_IDS = new Set([6, 8, 9, 10, 11, 12]);
@@ -151,6 +62,13 @@ export function Questionnaire() {
   const [currentAnswer, setCurrentAnswer] = useState<any>(null);
   const [completed, setCompleted] = useState(false);
   const [redFlagDetected, setRedFlagDetected] = useState(false);
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiAttempted, setAiAttempted] = useState(false);
+  const [patientName, setPatientName] = useState("");
+  const patientNameRef = useRef(patientName);
+  patientNameRef.current = patientName;
+  const screeningSubmitDone = useRef(false);
 
   const currentQuestion = questions[currentQuestionIndex];
   const progress = useMemo(
@@ -185,6 +103,7 @@ export function Questionnaire() {
       setCurrentQuestionIndex(nextIdx);
       setCurrentAnswer(answers[questions[nextIdx].id] ?? null);
     } else {
+      setAiLoading(true);
       setCompleted(true);
     }
   }, [currentAnswer, answers, currentQuestion, currentQuestionIndex, checkRedFlags]);
@@ -207,8 +126,8 @@ export function Questionnaire() {
     [currentAnswer]
   );
 
-  // ── COMPLETED SCREEN ──────────────────────────────────────────────────
-  if (completed) {
+  const completionSnapshot = useMemo(() => {
+    if (!completed) return null;
     const score2 = calculateSCORE2(answers);
     const riskLevel: "low" | "medium" | "high" =
       score2 < 5 ? "low" : score2 < 10 ? "medium" : "high";
@@ -223,8 +142,8 @@ export function Questionnaire() {
     if (answers[7] && Array.isArray(answers[7]) && answers[7].length > 0) {
       redFlags.push(`Og'riqning tarqalishi: ${(answers[7] as string[]).map((a) => areaLabels[a] ?? a).join(", ")}`);
     }
-    if (answers[8]  === "Ha") redFlags.push("Sovuq ter");
-    if (answers[9]  === "Ha") redFlags.push("Keskin nafas qisishi");
+    if (answers[8] === "Ha") redFlags.push("Sovuq ter");
+    if (answers[9] === "Ha") redFlags.push("Keskin nafas qisishi");
     if (answers[10] === "Ha") redFlags.push("Hushdan ketish");
     if (answers[11] === "Ha") redFlags.push("Oyoqlarda keskin shish");
     if (answers[12] === "Ha") redFlags.push("Taxikardiya + bosh aylanishi");
@@ -235,8 +154,119 @@ export function Questionnaire() {
     if (answers[38] === "Ha") conditions.push("Infarkt/insult tarixi");
     if (answers[39] === "Ha") conditions.push("Stent/shunt");
 
-    const riskColor = { low: "green", medium: "yellow", high: "red" }[riskLevel];
     const riskLabel = { low: "Past", medium: "O'rtacha", high: "Yuqori" }[riskLevel];
+
+    const fallbackSummary =
+      `${answers[1]} yoshli ${answers[2]?.toLowerCase() ?? ""} bemor. ` +
+      `${bmi ? `BMI indeksi: ${bmi}. ` : ""}` +
+      `${answers[33] === "Ha, chekaman" ? "Chekuvchi. " : ""}` +
+      `${answers[34] === "Ha" ? "Qandli diabet diagnozi qo'yilgan. " : ""}` +
+      `${answers[13] === "Ha" ? "Gipertoniya tarixi mavjud. " : ""}` +
+      `${answers[24] === "Ha" ? "Umumiy holsizlik va tez charchash hissi qayd etilgan. " : ""}` +
+      `${answers[36] === "Ha" ? "Oilada erta infarkt/insult tarixi bor. " : ""}` +
+      `SCORE2 xavf darajasi: ${score2.toFixed(1)}% (${riskLabel.toLowerCase()}). ` +
+      `${riskLevel === "high"
+        ? "Zudlik bilan kardiolog konsultatsiyasi, EKG va exokardiografiya tavsiya etiladi."
+        : riskLevel === "medium"
+          ? "Muntazam nazorat va profilaktik chora-tadbirlar tavsiya etiladi."
+          : "Yiliga 1 marta profilaktik tekshiruv o'tish tavsiya etiladi."}`;
+
+    return {
+      score2,
+      riskLevel,
+      riskLabel,
+      bmi,
+      redFlags,
+      conditions,
+      fallbackSummary,
+    };
+  }, [completed, answers, redFlagDetected]);
+
+  useEffect(() => {
+    if (!completionSnapshot) {
+      setAiLoading(false);
+      setAiSummary(null);
+      setAiAttempted(false);
+      return;
+    }
+    let cancelled = false;
+    setAiAttempted(false);
+    setAiLoading(true);
+    setAiSummary(null);
+    const ctx = buildAnamnesisContext(questions, answers);
+    const payload = {
+      context: ctx,
+      score2: completionSnapshot.score2,
+      riskLevel: completionSnapshot.riskLevel,
+      riskLabel: completionSnapshot.riskLabel,
+      redFlags: completionSnapshot.redFlags,
+      conditions: completionSnapshot.conditions,
+      bmi: completionSnapshot.bmi,
+      redFlagDetected,
+    };
+    fetch(apiUrl("/api/ai/anamnesis"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then(async (r) => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || "Xato");
+        if (!cancelled) setAiSummary(data.summary);
+      })
+      .catch(() => {
+        if (!cancelled) setAiSummary(null);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAiLoading(false);
+          setAiAttempted(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [completionSnapshot, answers, redFlagDetected]);
+
+  useEffect(() => {
+    if (!completionSnapshot || !aiAttempted || aiLoading) return;
+    if (screeningSubmitDone.current) return;
+    screeningSubmitDone.current = true;
+    const screeningQa = buildScreeningQa(questions, answers);
+    const summaryText = aiSummary ?? completionSnapshot.fallbackSummary;
+    fetch(apiUrl("/api/screenings"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        patientName: patientNameRef.current.trim() || null,
+        answers,
+        score2: completionSnapshot.score2,
+        riskLevel: completionSnapshot.riskLevel,
+        riskLabel: completionSnapshot.riskLabel,
+        summary: summaryText,
+        redFlags: completionSnapshot.redFlags,
+        conditions: completionSnapshot.conditions,
+        bmi: completionSnapshot.bmi,
+        redFlagDetected,
+        screeningQa,
+      }),
+    }).catch(() => {
+      screeningSubmitDone.current = false;
+    });
+  }, [
+    completionSnapshot,
+    aiAttempted,
+    aiLoading,
+    aiSummary,
+    answers,
+    redFlagDetected,
+  ]);
+
+  // ── COMPLETED SCREEN ──────────────────────────────────────────────────
+  if (completed) {
+    if (!completionSnapshot) return null;
+    const { score2, riskLevel, riskLabel, bmi, redFlags, conditions, fallbackSummary } =
+      completionSnapshot;
 
     return (
       <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white flex items-center justify-center p-4">
@@ -272,6 +302,20 @@ export function Questionnaire() {
               </div>
               <h2 className="text-3xl text-gray-900 mb-4">Skrining tugallandi!</h2>
               <p className="text-lg text-gray-600">Sizning javoblaringiz AI tomonidan tahlil qilindi</p>
+              <div className="mt-6 max-w-md mx-auto text-left">
+                <label htmlFor="patient-name" className="block text-sm text-gray-600 mb-1.5">
+                  Ism va familiya (ixtiyoriy)
+                </label>
+                <input
+                  id="patient-name"
+                  type="text"
+                  value={patientName}
+                  onChange={(e) => setPatientName(e.target.value)}
+                  autoComplete="name"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent text-gray-900 placeholder:text-gray-400"
+                  placeholder="Masalan: Anvar Usmanov"
+                />
+              </div>
             </div>
 
             {/* SCORE2 Risk Assessment */}
@@ -355,24 +399,25 @@ export function Questionnaire() {
               </div>
             )}
 
-            {/* AI Summary */}
+            {/* AI Summary (OpenAI API — serverda kalit) */}
             <div className="bg-gray-50 rounded-xl p-6 mb-6 border border-gray-200">
               <h3 className="text-lg text-gray-900 mb-3">AI Anamnez xulosasi</h3>
-              <p className="text-gray-700 leading-relaxed">
-                {answers[1]} yoshli {answers[2]?.toLowerCase() ?? ""} bemor.{" "}
-                {bmi ? `BMI indeksi: ${bmi}. ` : ""}
-                {answers[33] === "Ha, chekaman" ? "Chekuvchi. " : ""}
-                {answers[34] === "Ha" ? "Qandli diabet diagnozi qo'yilgan. " : ""}
-                {answers[13] === "Ha" ? "Gipertoniya tarixi mavjud. " : ""}
-                {answers[24] === "Ha" ? "Umumiy holsizlik va tez charchash hissi qayd etilgan. " : ""}
-                {answers[36] === "Ha" ? "Oilada erta infarkt/insult tarixi bor. " : ""}
-                SCORE2 xavf darajasi: {score2.toFixed(1)}% ({riskLabel.toLowerCase()}).{" "}
-                {riskLevel === "high"
-                  ? "Zudlik bilan kardiolog konsultatsiyasi, EKG va exokardiografiya tavsiya etiladi."
-                  : riskLevel === "medium"
-                  ? "Muntazam nazorat va profilaktik chora-tadbirlar tavsiya etiladi."
-                  : "Yiliga 1 marta profilaktik tekshiruv o'tish tavsiya etiladi."}
-              </p>
+              {aiLoading ? (
+                <div className="flex items-center gap-3 text-gray-600 py-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-emerald-600 shrink-0" aria-hidden />
+                  <span>AI tahlili yuklanmoqda...</span>
+                </div>
+              ) : (
+                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
+                  {aiSummary ?? fallbackSummary}
+                </p>
+              )}
+              {!aiLoading && !aiSummary && aiAttempted ? (
+                <p className="text-xs text-amber-700 mt-3">
+                  OpenAI javob bermadi yoki kalit sozlanmagan — avtomatik qisqa xulosa ko‘rsatilmoqda.{" "}
+                  <code className="text-amber-900/90">OPENAI_API_KEY</code> ni server .env da qo‘shing.
+                </p>
+              ) : null}
             </div>
 
             {/* Recommendations */}
@@ -492,20 +537,6 @@ export function Questionnaire() {
         </div>
       </div>
 
-      {/* Red Flag Warning Banner */}
-      {redFlagDetected && (
-        <div className="bg-gradient-to-r from-red-50 to-orange-50 border-b-2 border-red-400 sticky top-[133px] z-20">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 animate-pulse" />
-              <p className="text-sm text-red-700">
-                Xavfli belgilar aniqlandi. Skrining tugagach tezkor tibbiy yordam tavsiyasi beriladi.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Question Card */}
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div className="relative">
@@ -527,35 +558,49 @@ export function Questionnaire() {
               </h2>
             </div>
 
-            {/* Binary */}
+            {/* Binary: chap = salbiy, o'ng = ijobiy (tartib savolga qarab) */}
             {currentQuestion.type === "binary" && (
-              <div className="grid grid-cols-2 gap-4 mb-8">
-                {(["Ha", "Yo'q"] as const).map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => setCurrentAnswer(option)}
-                    className={`p-8 rounded-2xl border-2 transition-all ${
-                      currentAnswer === option
-                        ? option === "Ha"
-                          ? "border-emerald-500 bg-gradient-to-br from-emerald-50 to-emerald-100 shadow-xl scale-105"
-                          : "border-blue-500 bg-gradient-to-br from-blue-50 to-blue-100 shadow-xl scale-105"
-                        : "border-gray-200 hover:border-emerald-300 hover:bg-emerald-50"
-                    }`}
-                  >
-                    <div
-                      className={`text-2xl transition-colors ${
-                        currentAnswer === option
-                          ? option === "Ha"
-                            ? "text-emerald-700"
-                            : "text-blue-700"
-                          : "text-gray-700"
-                      }`}
-                    >
-                      {option}
-                    </div>
-                  </button>
-                ))}
+              <div className="mb-8">
+                <div className="flex justify-between text-xs text-gray-500 mb-3 px-1">
+                  <span>Salbiy javob</span>
+                  <span>Ijobiy javob</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  {(currentQuestion.binaryIjobiyOption === "ha"
+                    ? (["Yo'q", "Ha"] as const)
+                    : (["Ha", "Yo'q"] as const)
+                  ).map((option, idx) => {
+                    const isSalbiy = idx === 0;
+                    return (
+                      <button
+                        key={option}
+                        type="button"
+                        onClick={() => setCurrentAnswer(option)}
+                        className={`p-8 rounded-2xl border-2 transition-all ${
+                          currentAnswer === option
+                            ? isSalbiy
+                              ? "border-rose-400 bg-gradient-to-br from-rose-50 to-orange-50 shadow-xl scale-105 ring-2 ring-rose-100"
+                              : "border-emerald-500 bg-gradient-to-br from-emerald-50 to-emerald-100 shadow-xl scale-105 ring-2 ring-emerald-100"
+                            : isSalbiy
+                              ? "border-gray-200 hover:border-rose-300 hover:bg-rose-50/60"
+                              : "border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/80"
+                        }`}
+                      >
+                        <div
+                          className={`text-2xl transition-colors ${
+                            currentAnswer === option
+                              ? isSalbiy
+                                ? "text-rose-800"
+                                : "text-emerald-800"
+                              : "text-gray-700"
+                          }`}
+                        >
+                          {option}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

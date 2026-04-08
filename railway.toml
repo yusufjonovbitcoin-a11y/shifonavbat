@@ -1,0 +1,12 @@
+# Railway: https://docs.railway.com/guides/config-as-code
+# Loyiha rootida deploy qiling; PORT avtomatik beriladi (Express allaqachon ishlatadi).
+
+[build]
+# Vite devDependency — to'liq o'rnatish kerak (npm ci --omit=dev buildni sindiradi)
+buildCommand = "npm install && npm run build"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 300
+restartPolicyType = "ON_FAILURE"

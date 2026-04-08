@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Link } from "react-router";
+import { useMemo, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router";
 import {
   ArrowLeft,
   TrendingUp,
@@ -26,37 +26,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-
-const monthlyData = [
-  { month: "Okt",  bemorlar: 45, yuqoriXavf: 8,  ortacha: 12 },
-  { month: "Noy",  bemorlar: 52, yuqoriXavf: 11, ortacha: 15 },
-  { month: "Dek",  bemorlar: 61, yuqoriXavf: 9,  ortacha: 18 },
-  { month: "Yan",  bemorlar: 58, yuqoriXavf: 13, ortacha: 16 },
-  { month: "Fev",  bemorlar: 67, yuqoriXavf: 15, ortacha: 19 },
-  { month: "Mar",  bemorlar: 72, yuqoriXavf: 12, ortacha: 21 },
-];
-
-const riskDistribution = [
-  { name: "Past xavf",    value: 156, color: "#10b981" },
-  { name: "O'rtacha xavf", value: 101, color: "#f59e0b" },
-  { name: "Yuqori xavf",  value: 68,  color: "#ef4444" },
-];
-
-const conditionsData = [
-  { kasallik: "Gipertoniya",  soni: 89 },
-  { kasallik: "Qandli diabet", soni: 56 },
-  { kasallik: "IYuK",         soni: 34 },
-  { kasallik: "Aritmiya",     soni: 28 },
-  { kasallik: "Yurak yet.",   soni: 21 },
-];
-
-const ageGroups = [
-  { guruh: "20-30", soni: 42 },
-  { guruh: "31-40", soni: 68 },
-  { guruh: "41-50", soni: 95 },
-  { guruh: "51-60", soni: 78 },
-  { guruh: "61+",   soni: 42 },
-];
+import { apiUrl, authJsonHeaders, getAuthToken } from "../lib/api";
 
 const tooltipStyle = {
   contentStyle: {
@@ -67,29 +37,96 @@ const tooltipStyle = {
   },
 };
 
-const TOTAL_PATIENTS = 325;
-const HIGH_RISK = 68;
-const AVG_SCORE = 4.8;
-const SCREENINGS_THIS_MONTH = 72;
+type AnalyticsPayload = {
+  total: number;
+  highRisk: number;
+  avgScore2: number;
+  thisMonth: number;
+  riskDistribution: { name: string; value: number; color: string }[];
+  monthlyTrend: { month: string; bemorlar: number; yuqoriXavf: number; ortacha: number }[];
+  conditionsTop: { kasallik: string; soni: number }[];
+  ageGroups: { guruh: string; soni: number }[];
+};
+
+const emptyPayload: AnalyticsPayload = {
+  total: 0,
+  highRisk: 0,
+  avgScore2: 0,
+  thisMonth: 0,
+  riskDistribution: [
+    { name: "Past xavf", value: 0, color: "#10b981" },
+    { name: "O'rtacha xavf", value: 0, color: "#f59e0b" },
+    { name: "Yuqori xavf", value: 0, color: "#ef4444" },
+  ],
+  monthlyTrend: [],
+  conditionsTop: [],
+  ageGroups: [],
+};
 
 export function Analytics() {
+  const navigate = useNavigate();
+  const [data, setData] = useState<AnalyticsPayload>(emptyPayload);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!getAuthToken()) {
+      navigate("/", { replace: true });
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetch(apiUrl("/api/analytics/summary"), { headers: authJsonHeaders() })
+      .then(async (r) => {
+        if (r.status === 401) {
+          navigate("/", { replace: true });
+          return;
+        }
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || "Xato");
+        if (!cancelled && j.ok) {
+          setData({
+            total: j.total ?? 0,
+            highRisk: j.highRisk ?? 0,
+            avgScore2: j.avgScore2 ?? 0,
+            thisMonth: j.thisMonth ?? 0,
+            riskDistribution: j.riskDistribution?.length ? j.riskDistribution : emptyPayload.riskDistribution,
+            monthlyTrend: j.monthlyTrend ?? [],
+            conditionsTop: j.conditionsTop ?? [],
+            ageGroups: j.ageGroups ?? [],
+          });
+        }
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError(e.message || "Yuklanmadi");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
+
   const kpiCards = useMemo(
     () => [
       {
         icon: Users,
-        value: TOTAL_PATIENTS,
-        label: "Jami skrining o'tganlar",
-        badge: "+12% so'nggi oyda",
-        badgeColor: "text-green-600",
+        value: data.total,
+        label: "Jami skrining",
+        badge: data.thisMonth ? `Bu oy: ${data.thisMonth}` : "Ma'lumot yo'q",
+        badgeColor: "text-gray-600",
         iconBg: "bg-blue-100",
         iconColor: "text-blue-600",
         trend: <TrendingUp className="w-5 h-5 text-green-500" />,
       },
       {
         icon: AlertCircle,
-        value: HIGH_RISK,
-        label: "Yuqori xavfli bemorlar",
-        badge: `${((HIGH_RISK / TOTAL_PATIENTS) * 100).toFixed(1)}% jami`,
+        value: data.highRisk,
+        label: "Yuqori xavf (jami)",
+        badge:
+          data.total > 0 ? `${((data.highRisk / data.total) * 100).toFixed(1)}% jami` : "—",
         badgeColor: "text-red-600",
         iconBg: "bg-red-100",
         iconColor: "text-red-600",
@@ -97,9 +134,9 @@ export function Analytics() {
       },
       {
         icon: BarChart3,
-        value: `${AVG_SCORE}%`,
+        value: data.total ? `${data.avgScore2}%` : "—",
         label: "O'rtacha SCORE2",
-        badge: "Normal diapazon",
+        badge: "Barcha skrininglar",
         badgeColor: "text-green-600",
         iconBg: "bg-green-100",
         iconColor: "text-green-600",
@@ -107,21 +144,39 @@ export function Analytics() {
       },
       {
         icon: Calendar,
-        value: SCREENINGS_THIS_MONTH,
+        value: data.thisMonth,
         label: "Bu oyda skrining",
-        badge: "+18% o'sish",
+        badge: "Haqiqiy ma'lumot",
         badgeColor: "text-green-600",
         iconBg: "bg-purple-100",
         iconColor: "text-purple-600",
         trend: <TrendingUp className="w-5 h-5 text-green-500" />,
       },
     ],
-    []
+    [data]
   );
+
+  const monthlyData =
+    data.monthlyTrend.length > 0
+      ? data.monthlyTrend
+      : [{ month: "—", bemorlar: 0, yuqoriXavf: 0, ortacha: 0 }];
+
+  const riskDistribution = data.riskDistribution;
+  const conditionsData =
+    data.conditionsTop.length > 0 ? data.conditionsTop : [{ kasallik: "—", soni: 0 }];
+  const ageGroups =
+    data.ageGroups.length > 0
+      ? data.ageGroups
+      : [
+          { guruh: "20-30", soni: 0 },
+          { guruh: "31-40", soni: 0 },
+          { guruh: "41-50", soni: 0 },
+          { guruh: "51-60", soni: 0 },
+          { guruh: "61+", soni: 0 },
+        ];
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
@@ -137,10 +192,15 @@ export function Analytics() {
                 <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg flex items-center justify-center">
                   <Heart className="w-4 h-4 text-white" />
                 </div>
-                <span className="text-gray-900">Shifokor-LDA</span>
+                <span className="text-gray-900">ShifokorLDA</span>
               </div>
             </div>
-            <button className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-lg hover:from-emerald-600 hover:to-emerald-700 transition-all shadow-md">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-lg hover:from-emerald-600 hover:to-emerald-700 transition-all shadow-md opacity-60 cursor-not-allowed"
+              disabled
+              title="Tez orada"
+            >
               <Download className="w-4 h-4" />
               Eksport
             </button>
@@ -149,18 +209,30 @@ export function Analytics() {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Title */}
         <div className="mb-8">
           <h1 className="text-3xl text-gray-900 mb-2">Analytics va Statistika</h1>
           <p className="text-gray-600">
-            Klinika faoliyati va bemorlar holati haqida to'liq ma'lumot
+            Klinika faoliyati va bemorlar holati (serverdagi skrininglar bo&apos;yicha)
           </p>
+          {loading ? <p className="text-sm text-gray-500 mt-2">Yuklanmoqda...</p> : null}
+          {error ? (
+            <p className="text-sm text-red-600 mt-2" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {!loading && !error && data.total === 0 ? (
+            <p className="text-sm text-amber-700 mt-2">
+              Hozircha skrining yo&apos;q. Bemorlar skrining topshirgach, grafiklar to&apos;ldiriladi.
+            </p>
+          ) : null}
         </div>
 
-        {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
           {kpiCards.map((card, idx) => (
-            <div key={idx} className="bg-white rounded-xl p-5 border border-gray-200 hover:shadow-md transition-shadow">
+            <div
+              key={idx}
+              className="bg-white rounded-xl p-5 border border-gray-200 hover:shadow-md transition-shadow"
+            >
               <div className="flex items-center justify-between mb-4">
                 <div className={`w-12 h-12 ${card.iconBg} rounded-xl flex items-center justify-center`}>
                   <card.icon className={`w-6 h-6 ${card.iconColor}`} />
@@ -174,9 +246,7 @@ export function Analytics() {
           ))}
         </div>
 
-        {/* Charts Row 1 */}
         <div className="grid lg:grid-cols-2 gap-6 mb-6">
-          {/* Monthly Trend */}
           <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
             <h3 className="text-lg text-gray-900 mb-6">Oylik dinamika</h3>
             <ResponsiveContainer width="100%" height={280}>
@@ -192,7 +262,7 @@ export function Analytics() {
                   stroke="#10b981"
                   strokeWidth={2.5}
                   dot={{ r: 4, fill: "#10b981" }}
-                  name="Jami bemorlar"
+                  name="Jami skrining"
                 />
                 <Line
                   type="monotone"
@@ -214,7 +284,6 @@ export function Analytics() {
             </ResponsiveContainer>
           </div>
 
-          {/* Risk Distribution */}
           <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
             <h3 className="text-lg text-gray-900 mb-6">Xavf darajasi taqsimoti</h3>
             <ResponsiveContainer width="100%" height={200}>
@@ -224,7 +293,7 @@ export function Analytics() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) => `${(percent * 100).toFixed(0)}%`}
+                  label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
                   outerRadius={90}
                   innerRadius={40}
                   dataKey="value"
@@ -251,84 +320,48 @@ export function Analytics() {
           </div>
         </div>
 
-        {/* Charts Row 2 */}
         <div className="grid lg:grid-cols-2 gap-6 mb-6">
-          {/* Top Conditions */}
           <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-            <h3 className="text-lg text-gray-900 mb-6">Eng ko'p uchraydigan kasalliklar</h3>
+            <h3 className="text-lg text-gray-900 mb-6">Eng ko&apos;p qayd etilgan holatlar</h3>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={conditionsData} layout="vertical">
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis type="number" stroke="#9ca3af" tick={{ fontSize: 12 }} />
-                <YAxis type="category" dataKey="kasallik" stroke="#9ca3af" width={90} tick={{ fontSize: 12 }} />
+                <YAxis
+                  type="category"
+                  dataKey="kasallik"
+                  stroke="#9ca3af"
+                  width={90}
+                  tick={{ fontSize: 12 }}
+                />
                 <Tooltip {...tooltipStyle} />
-                <Bar dataKey="soni" fill="#10b981" radius={[0, 6, 6, 0]} name="Bemorlar soni" />
+                <Bar dataKey="soni" fill="#10b981" radius={[0, 6, 6, 0]} name="Soni" />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Age Distribution */}
           <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
-            <h3 className="text-lg text-gray-900 mb-6">Yosh guruhlari bo'yicha</h3>
+            <h3 className="text-lg text-gray-900 mb-6">Yosh guruhlari bo&apos;yicha</h3>
             <ResponsiveContainer width="100%" height={280}>
               <BarChart data={ageGroups}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="guruh" stroke="#9ca3af" tick={{ fontSize: 12 }} />
                 <YAxis stroke="#9ca3af" tick={{ fontSize: 12 }} />
                 <Tooltip {...tooltipStyle} />
-                <Bar dataKey="soni" fill="#3b82f6" radius={[6, 6, 0, 0]} name="Bemorlar soni" />
+                <Bar dataKey="soni" fill="#3b82f6" radius={[6, 6, 0, 0]} name="Skrininglar" />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Insights */}
         <div className="bg-gradient-to-br from-emerald-50 via-white to-blue-50 rounded-xl p-8 border border-emerald-100 shadow-sm">
-          <h3 className="text-xl text-gray-900 mb-6">Asosiy xulosalar</h3>
-          <div className="grid md:grid-cols-2 gap-6">
-            {[
-              {
-                icon: TrendingUp,
-                bgColor: "bg-green-100",
-                iconColor: "text-green-600",
-                title: "Ijobiy tendensiya",
-                desc: "So'nggi 3 oyda skrining o'tkazilayotgan bemorlar soni 28% ga oshdi. Bu profilaktik tibbiyotga e'tiborning oshganidan dalolat beradi.",
-              },
-              {
-                icon: AlertCircle,
-                bgColor: "bg-red-100",
-                iconColor: "text-red-600",
-                title: "E'tibor talab etadi",
-                desc: "41-50 yosh oralig'idagi bemorlar orasida yuqori xavf darajasi boshqa guruhlarga nisbatan 15% yuqori. Maqsadli kampaniya zarur.",
-              },
-              {
-                icon: BarChart3,
-                bgColor: "bg-purple-100",
-                iconColor: "text-purple-600",
-                title: "Xizmat samaradorligi",
-                desc: "AI-skrining tizimi orqali har bir bemorga sarflanadigan vaqt 15 daqiqadan 5 daqiqagacha qisqardi. Bu kuniga 3x ko'proq qabul qilish imkonini beradi.",
-              },
-              {
-                icon: Activity,
-                bgColor: "bg-blue-100",
-                iconColor: "text-blue-600",
-                title: "Sifat yaxshilanishi",
-                desc: "Erta diagnostika natijasida komplikatsiyalar 40% ga kamaydi. Bemorlar ehtiyoji va xavf darajasiga qarab individual yondashuvlar qo'llanmoqda.",
-              },
-            ].map((insight, idx) => (
-              <div key={idx} className="flex items-start gap-4">
-                <div
-                  className={`w-10 h-10 ${insight.bgColor} rounded-lg flex items-center justify-center flex-shrink-0`}
-                >
-                  <insight.icon className={`w-5 h-5 ${insight.iconColor}`} />
-                </div>
-                <div>
-                  <h4 className="text-gray-900 mb-1">{insight.title}</h4>
-                  <p className="text-sm text-gray-600">{insight.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
+          <h3 className="text-xl text-gray-900 mb-4">Eslatma</h3>
+          <p className="text-sm text-gray-600 leading-relaxed">
+            Grafiklar faqat ushbu serverda saqlangan skrininglar asosida hisoblanadi. Vercel faqat frontend
+            bo&apos;lsa, statistika sizning Node API serveringiz (masalan, Railway / VPS) bilan ishlaydi —
+            <code className="mx-1 text-gray-800">VITE_API_BASE_URL</code>
+            ni sozlang.
+          </p>
         </div>
       </div>
     </div>

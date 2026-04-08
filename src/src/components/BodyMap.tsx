@@ -55,27 +55,11 @@ function BodyMapComponent({ selectedAreas, onAreaClick }: BodyMapProps) {
 
   return (
     <div className="space-y-5">
-      {/* Body Diagram */}
-      <div className="relative bg-gradient-to-br from-emerald-50 via-blue-50 to-purple-50 rounded-3xl p-6 border-2 border-emerald-200 shadow-xl">
-        <div className="text-center mb-4">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-white rounded-full text-sm text-emerald-700 border border-emerald-200 shadow-sm">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5" />
-            </svg>
-            Og'riq sezilgan joylarni tanlang
-          </div>
-          <p className="text-xs text-gray-500 mt-2">
-            {selectedAreas.length === 0
-              ? "Diagrammada yoki pastdagi tugmachalardan tanlang"
-              : `${selectedAreas.length} ta soha tanlandi`}
-          </p>
-        </div>
-
-        <svg
-          viewBox="0 0 200 200"
-          className="w-full max-w-xs mx-auto cursor-pointer select-none"
-          style={{ filter: "drop-shadow(0 4px 12px rgba(16,185,129,0.15))" }}
-        >
+      <svg
+        viewBox="0 0 200 200"
+        className="w-full max-w-xs mx-auto cursor-pointer select-none"
+        style={{ filter: "drop-shadow(0 4px 12px rgba(16,185,129,0.15))" }}
+      >
           {/* ── Body outline shapes ── */}
           <g fill="#f0fdf4" stroke="#10b981" strokeWidth="1.5">
             {/* Head */}
@@ -149,7 +133,6 @@ function BodyMapComponent({ selectedAreas, onAreaClick }: BodyMapProps) {
             </text>
           )}
         </svg>
-      </div>
 
       {/* Selected areas chips */}
       {selectedAreas.length > 0 && (
