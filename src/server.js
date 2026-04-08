@@ -1,5 +1,6 @@
 import "dotenv/config";
 import express from "express";
+import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { mkdir, readFile, writeFile } from "fs/promises";
@@ -25,19 +26,22 @@ const app = express();
 const bot = createBot(BOT_TOKEN);
 let checkins = [];
 
+const rootDir = join(__dirname, "..");
+const buildDir = join(rootDir, "build");
+const publicDir = join(rootDir, "public");
+const staticRoot =
+  existsSync(join(buildDir, "index.html")) ? buildDir : publicDir;
+
 app.use(express.json());
-app.use(express.static(join(__dirname, "..", "public")));
+app.use(express.static(staticRoot));
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, bot: "running" });
 });
 
 app.get("/check-in", (req, res) => {
-  if (CHECKIN_PUBLIC_URL.includes("shifonavbat.vercel.app")) {
-    const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
-    return res.redirect(302, `${CHECKIN_PUBLIC_URL}/${qs}`);
-  }
-  return res.sendFile(join(__dirname, "..", "public", "check-in.html"));
+  const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  return res.redirect(302, `${CHECKIN_PUBLIC_URL}${qs}`);
 });
 
 function norm(v) {
@@ -129,8 +133,21 @@ async function main() {
     console.log("Bot long polling rejimida ishlamoqda.");
   }
 
+  if (existsSync(join(buildDir, "index.html"))) {
+    app.get("*", (req, res, next) => {
+      if (req.path.startsWith("/api")) return next();
+      if (req.path === WEBHOOK_PATH) return next();
+      res.sendFile(join(buildDir, "index.html"));
+    });
+  }
+
   app.listen(PORT, () => {
-    console.log(`Veb: http://localhost:${PORT}`);
+    console.log(`API + bot: http://localhost:${PORT}`);
+    console.log(
+      staticRoot === buildDir
+        ? `Veb (build): http://localhost:${PORT}`
+        : `Veb: avval "npm run build", keyin qayta ishga tushiring yoki "npm run dev" (5173)`
+    );
   });
 }
 
