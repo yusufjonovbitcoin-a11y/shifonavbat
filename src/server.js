@@ -74,7 +74,7 @@ const STORE_FILE = join(STORE_DIR, "checkins.json");
 const SCREENINGS_FILE = join(STORE_DIR, "screenings.json");
 
 const DOCTOR_LOGIN = String(process.env.DOCTOR_LOGIN ?? "").trim();
-const DOCTOR_PASSWORD = String(process.env.DOCTOR_PASSWORD ?? "");
+const DOCTOR_PASSWORD = String(process.env.DOCTOR_PASSWORD ?? "").trim();
 const SESSION_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** @type {Map<string, number>} token -> muddot tugash vaqti (timestamp) */
@@ -154,12 +154,14 @@ app.post("/api/auth/login", (req, res) => {
   if (!DOCTOR_LOGIN || !DOCTOR_PASSWORD) {
     return res.status(503).json({
       ok: false,
-      error: "DOCTOR_LOGIN va DOCTOR_PASSWORD .env da sozlanmagan.",
+      error:
+        "Serverda DOCTOR_LOGIN va DOCTOR_PASSWORD o'rnatilmagan (Railway → Variables).",
     });
   }
-  const login = String(req.body?.login ?? "").trim();
-  const password = String(req.body?.password ?? "");
-  if (login !== DOCTOR_LOGIN || password !== DOCTOR_PASSWORD) {
+  const login = String(req.body?.login ?? "").trim().toLowerCase();
+  const password = String(req.body?.password ?? "").trim();
+  const expectedLogin = DOCTOR_LOGIN.toLowerCase();
+  if (login !== expectedLogin || password !== DOCTOR_PASSWORD) {
     return res.status(401).json({ ok: false, error: "Login yoki parol noto'g'ri." });
   }
   const token = randomBytes(32).toString("hex");

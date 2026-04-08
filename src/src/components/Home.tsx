@@ -21,18 +21,38 @@ export function Home() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             login: authLogin.trim(),
-            password: authPassword,
+            password: authPassword.trim(),
           }),
         });
-        const data = await r.json().catch(() => ({}));
+        const data = (await r.json().catch(() => ({}))) as { error?: string; token?: string };
         if (!r.ok) {
-          setAuthError(data.error || "Kirish muvaffaqiyatsiz.");
+          let msg = data.error;
+          if (!msg) {
+            if (r.status === 404) {
+              msg =
+                "API topilmadi. Frontend alohida domen bo'lsa, buildda VITE_API_BASE_URL ni Railway backend URL qiling.";
+            } else if (r.status === 503) {
+              msg =
+                data.error ||
+                "Serverda shifokor login/parol sozlanmagan (DOCTOR_LOGIN, DOCTOR_PASSWORD).";
+            } else {
+              msg = "Kirish muvaffaqiyatsiz.";
+            }
+          }
+          setAuthError(msg);
           return;
         }
-        if (data.token) setAuthToken(data.token);
+        try {
+          if (data.token) setAuthToken(data.token);
+        } catch {
+          setAuthError("Brauzer xotirasi bloklangan — sessionStorage ruxsat bering.");
+          return;
+        }
         navigate("/dashboard");
       } catch {
-        setAuthError("Serverga ulanib bo'lmadi. Internet yoki API manzilini tekshiring.");
+        setAuthError(
+          "Serverga ulanib bo'lmadi. Railway ishlayaptimi? Lokal dev: npm run server (3000) + npm run dev (5173)."
+        );
       } finally {
         setSubmitting(false);
       }
