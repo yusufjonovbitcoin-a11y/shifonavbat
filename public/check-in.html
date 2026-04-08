@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Check-in</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, Arial, sans-serif;
+        background: #0f1419;
+        color: #e8eef6;
+      }
+      .wrap {
+        max-width: 680px;
+        margin: 28px auto;
+        padding: 0 14px;
+      }
+      .card {
+        background: #1a2332;
+        border: 1px solid #273447;
+        border-radius: 12px;
+        padding: 16px;
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: 1.2rem;
+      }
+      .muted {
+        color: #9eb1cb;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .item {
+        border: 1px solid #2e3c52;
+        border-radius: 8px;
+        padding: 10px;
+      }
+      .item b {
+        display: block;
+        color: #8fd0ff;
+        margin-bottom: 4px;
+        font-size: 0.85rem;
+      }
+      .ok {
+        margin-top: 14px;
+        padding: 10px;
+        border-radius: 8px;
+        background: rgba(44, 197, 113, 0.14);
+        border: 1px solid rgba(44, 197, 113, 0.4);
+      }
+      .bad {
+        margin-top: 14px;
+        padding: 10px;
+        border-radius: 8px;
+        background: rgba(239, 95, 95, 0.14);
+        border: 1px solid rgba(239, 95, 95, 0.4);
+      }
+      .loading {
+        margin-top: 14px;
+        padding: 10px;
+        border-radius: 8px;
+        background: rgba(42, 171, 238, 0.14);
+        border: 1px solid rgba(42, 171, 238, 0.4);
+      }
+      code {
+        color: #9eb1cb;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="card">
+        <h1>Klinika check-in</h1>
+        <p class="muted">
+          QR orqali kelgan dinamik parametrlar avtomatik o‘qiladi.
+        </p>
+        <div class="grid">
+          <div class="item"><b>Bo‘lim (dept)</b><span id="dept">—</span></div>
+          <div class="item"><b>Shifokor ID (doc)</b><span id="doc">—</span></div>
+          <div class="item"><b>Bemor kodi (pid)</b><span id="pid">—</span></div>
+          <div class="item"><b>To‘liq URL</b><code id="fullUrl">—</code></div>
+        </div>
+        <div id="status"></div>
+      </section>
+    </main>
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const dept = params.get("dept") || "";
+      const doc = params.get("doc") || "";
+      const pid = params.get("pid") || "";
+
+      document.getElementById("dept").textContent = dept || "—";
+      document.getElementById("doc").textContent = doc || "—";
+      document.getElementById("pid").textContent = pid || "—";
+      document.getElementById("fullUrl").textContent = window.location.href;
+
+      const status = document.getElementById("status");
+      if (!dept || !doc || !pid) {
+        status.className = "bad";
+        status.textContent =
+          "Linkda parametrlardan biri yetishmayapti. To'g'ri format: /check-in?dept=urolog&doc=102&pid=5501";
+      } else {
+        status.className = "loading";
+        status.textContent = "Check-in amalga oshirilmoqda...";
+
+        fetch("/api/check-in", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dept,
+            doc,
+            pid,
+            sourceUrl: window.location.href,
+          }),
+        })
+          .then((r) => r.json())
+          .then((d) => {
+            if (!d.ok) throw new Error(d.error || "Xato");
+            status.className = "ok";
+            status.textContent =
+              "Check-in muvaffaqiyatli yakunlandi. Navbat raqamingiz: " +
+              d.checkin.ticket +
+              ".";
+          })
+          .catch((e) => {
+            status.className = "bad";
+            status.textContent =
+              "Check-in saqlanmadi: " + (e.message || "Noma'lum xato");
+          });
+      }
+    </script>
+  </body>
+</html>
