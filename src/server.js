@@ -82,13 +82,15 @@ const doctorSessions = new Map();
 
 let screenings = [];
 
-if (!BOT_TOKEN) {
-  console.error("BOT_TOKEN .env faylida yo‘q. .env.example ni .env ga nusxalang.");
-  process.exit(1);
+/** Telegram ixtiyoriy: Railwayda faqat API + veb uchun BOT_TOKEN bo‘lmasa ham ishga tushadi */
+const bot = BOT_TOKEN ? createBot(BOT_TOKEN) : null;
+if (!bot) {
+  console.warn(
+    "BOT_TOKEN yo'q — Telegram bot o'chirilgan. ShifokorLDA API va statik veb ishlaydi. Bot uchun BOT_TOKEN qo'shing."
+  );
 }
 
 const app = express();
-const bot = createBot(BOT_TOKEN);
 let checkins = [];
 
 const rootDir = join(__dirname, "..");
@@ -142,7 +144,7 @@ async function saveScreenings() {
 app.get("/api/health", (_req, res) => {
   res.json({
     ok: true,
-    bot: "running",
+    bot: bot ? "running" : "disabled",
     openai: Boolean(openaiClient),
     doctorAuthConfigured: Boolean(DOCTOR_LOGIN && DOCTOR_PASSWORD),
   });
@@ -461,23 +463,28 @@ async function main() {
   await loadStore();
   await loadScreenings();
 
-  // Telegram chat menu button: opens bot commands menu.
-  try {
-    await bot.telegram.setChatMenuButton({
-      menu_button: { type: "commands" },
-    });
-  } catch (err) {
-    console.warn("setChatMenuButton failed:", err?.message || err);
-  }
+  if (bot) {
+    try {
+      try {
+        await bot.telegram.setChatMenuButton({
+          menu_button: { type: "commands" },
+        });
+      } catch (err) {
+        console.warn("setChatMenuButton failed:", err?.message || err);
+      }
 
-  if (PUBLIC_URL) {
-    const webhookUrl = `${PUBLIC_URL.replace(/\/$/, "")}${WEBHOOK_PATH}`;
-    await bot.telegram.setWebhook(webhookUrl);
-    app.use(bot.webhookCallback(WEBHOOK_PATH));
-    console.log(`Webhook: ${webhookUrl}`);
-  } else {
-    bot.launch();
-    console.log("Bot long polling rejimida ishlamoqda.");
+      if (PUBLIC_URL) {
+        const webhookUrl = `${PUBLIC_URL.replace(/\/$/, "")}${WEBHOOK_PATH}`;
+        await bot.telegram.setWebhook(webhookUrl);
+        app.use(bot.webhookCallback(WEBHOOK_PATH));
+        console.log(`Webhook: ${webhookUrl}`);
+      } else {
+        bot.launch().catch((err) => console.warn("bot.launch:", err?.message || err));
+        console.log("Bot long polling rejimida ishlamoqda.");
+      }
+    } catch (err) {
+      console.warn("Telegram bot ishga tushmadi (API ishlayveradi):", err?.message || err);
+    }
   }
 
   if (existsSync(join(buildDir, "index.html"))) {
@@ -488,12 +495,13 @@ async function main() {
     });
   }
 
-  app.listen(PORT, () => {
-    console.log(`API + bot: http://localhost:${PORT}`);
+  const host = process.env.HOST || "0.0.0.0";
+  app.listen(PORT, host, () => {
+    console.log(`API: http://${host}:${PORT}`);
     console.log(
       staticRoot === buildDir
-        ? `Veb (build): http://localhost:${PORT}`
-        : `Veb: avval "npm run build", keyin qayta ishga tushiring yoki "npm run dev" (5173)`
+        ? `Veb (build): ${PORT}-port`
+        : `Veb: avval "npm run build", keyin qayta ishga tushiring`
     );
   });
 }
@@ -504,7 +512,7 @@ main().catch((err) => {
 });
 
 const shutdown = () => {
-  bot.stop("SIGINT");
+  if (bot) bot.stop("SIGINT");
   process.exit(0);
 };
 process.once("SIGINT", shutdown);
