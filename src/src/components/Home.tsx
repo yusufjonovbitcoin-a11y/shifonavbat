@@ -3,6 +3,9 @@ import { useNavigate } from "react-router";
 import { Lock, Heart } from "lucide-react";
 import { apiUrl, setAuthToken } from "../lib/api";
 
+const PROD_API_MISSING =
+  import.meta.env.PROD && !(import.meta.env.VITE_API_BASE_URL && String(import.meta.env.VITE_API_BASE_URL).trim());
+
 export function Home() {
   const navigate = useNavigate();
   const [authLogin, setAuthLogin] = useState("");
@@ -28,9 +31,12 @@ export function Home() {
         if (!r.ok) {
           let msg = data.error;
           if (!msg) {
-            if (r.status === 404) {
+            if (r.status === 405) {
               msg =
-                "API topilmadi. Frontend alohida domen bo'lsa, buildda VITE_API_BASE_URL ni Railway backend URL qiling.";
+                "API Vercelga ketib qolgan (405). Vercel → Environment Variables → VITE_API_BASE_URL = Railway URL (https://....up.railway.app), keyin Redeploy.";
+            } else if (r.status === 404) {
+              msg =
+                "API topilmadi. Vercelda VITE_API_BASE_URL ni Railway backend manziliga qo'ying va qayta deploy qiling.";
             } else if (r.status === 503) {
               msg =
                 data.error ||
@@ -84,6 +90,15 @@ export function Home() {
             <div className="absolute inset-0 bg-gradient-to-br from-emerald-400/20 to-blue-400/20 rounded-3xl blur-2xl" aria-hidden />
             <div className="relative bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-emerald-100/80 p-8 sm:p-10">
               <div className="text-center mb-8">
+                {PROD_API_MISSING ? (
+                  <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-left text-sm text-amber-950">
+                    <strong>API ulangan emas.</strong> Vercel loyihasida{" "}
+                    <code className="rounded bg-amber-100/80 px-1">VITE_API_BASE_URL</code> o‘zgaruvchisiga
+                    Railway backend URL qo‘ying (masalan{" "}
+                    <code className="rounded bg-amber-100/80 px-1 text-xs">https://xxx.up.railway.app</code>
+                    ), so‘ng <strong>Redeploy</strong> qiling.
+                  </div>
+                ) : null}
                 <div className="inline-flex w-14 h-14 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl items-center justify-center shadow-lg shadow-emerald-200/50 mx-auto">
                   <Lock className="w-7 h-7 text-white" aria-hidden />
                 </div>
