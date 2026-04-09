@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Link, useNavigate } from "react-router";
+import { useNavigate } from "react-router";
 import { Lock, Heart } from "lucide-react";
 import { apiUrl, setAuthToken } from "../lib/api";
 
@@ -156,23 +156,6 @@ export function Home() {
                   {submitting ? "Kutilmoqda..." : "Kirish"}
                 </button>
               </form>
-              <div className="mt-7 pt-6 border-t border-emerald-100">
-                <p className="text-xs text-gray-500 mb-3 text-center">Bemor uchun anketa</p>
-                <div className="grid gap-2">
-                  <Link
-                    to="/questionnaire"
-                    className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm text-center hover:bg-emerald-50 hover:border-emerald-300 transition-colors"
-                  >
-                    Kardiologik skrining
-                  </Link>
-                  <Link
-                    to="/questionnaire-gynecology"
-                    className="w-full py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm text-center hover:bg-emerald-50 hover:border-emerald-300 transition-colors"
-                  >
-                    Ginekologik anketa
-                  </Link>
-                </div>
-              </div>
             </div>
           </div>
         </div>
