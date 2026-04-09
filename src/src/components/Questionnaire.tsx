@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import {
   ArrowLeft,
   ArrowRight,
@@ -57,6 +57,7 @@ const areaLabels: Record<string, string> = {
 };
 
 export function Questionnaire() {
+  const navigate = useNavigate();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, any>>({});
   const [currentAnswer, setCurrentAnswer] = useState<any>(null);
@@ -261,6 +262,14 @@ export function Questionnaire() {
     answers,
     redFlagDetected,
   ]);
+
+  useEffect(() => {
+    if (!completed || !aiAttempted || aiLoading) return;
+    const t = setTimeout(() => {
+      navigate("/dashboard");
+    }, 600);
+    return () => clearTimeout(t);
+  }, [completed, aiAttempted, aiLoading, navigate]);
 
   // ── COMPLETED SCREEN ──────────────────────────────────────────────────
   if (completed) {

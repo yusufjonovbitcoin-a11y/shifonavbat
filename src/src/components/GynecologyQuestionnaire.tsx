@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, CheckCircle, ClipboardPlus } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import {
   GYNECOLOGY_QUESTIONS as questions,
   GYNECOLOGY_TOTAL as TOTAL,
@@ -16,6 +16,7 @@ function isEmpty(v: unknown): boolean {
 }
 
 export function GynecologyQuestionnaire() {
+  const navigate = useNavigate();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, unknown>>({});
   const [currentAnswer, setCurrentAnswer] = useState<unknown>(null);
@@ -39,7 +40,7 @@ export function GynecologyQuestionnaire() {
       setCurrentQuestionIndex(nextIdx);
       setCurrentAnswer(nextAnswers[questions[nextIdx].id] ?? null);
     } else {
-      setCompleted(true);
+      navigate("/dashboard");
     }
   };
 
