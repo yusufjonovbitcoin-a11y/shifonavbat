@@ -1,4 +1,11 @@
-import type { CardioQuestion } from "../data/cardioQuestionnaire";
+type QuestionForScreening = {
+  id: number;
+  block: string;
+  type: "binary" | "scale" | "text" | "number" | "select" | "multiInput" | "bodyMap" | "date";
+  question: string;
+  fields?: { name: string; placeholder: string; type?: string }[];
+  binaryIjobiyOption?: "yoq" | "ha";
+};
 
 export type ScreeningPolarity = "ijobiy" | "salbiy" | "neutral";
 
@@ -22,7 +29,7 @@ const areaLabels: Record<string, string> = {
   upperBack: "Orqa (kuraksohasi)",
 };
 
-function formatAnswer(q: CardioQuestion, answer: unknown): string {
+function formatAnswer(q: QuestionForScreening, answer: unknown): string {
   if (answer === null || answer === undefined || answer === "") return "—";
 
   if (q.type === "bodyMap") {
@@ -48,7 +55,7 @@ function formatAnswer(q: CardioQuestion, answer: unknown): string {
 
 /** Skrining jadvali uchun savol-javoblar va ijobiy/salbiy ustunlari */
 export function buildScreeningQa(
-  questionList: CardioQuestion[],
+  questionList: QuestionForScreening[],
   answers: Record<number, unknown>
 ): ScreeningQA[] {
   const out: ScreeningQA[] = [];
