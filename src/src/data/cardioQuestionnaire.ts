@@ -13,7 +13,7 @@ export type CardioQuestion = {
 }
 
 // Questions defined outside component to avoid re-creation on each render
-export const CARDIO_QUESTIONS: CardioQuestion[] = [
+const ALL_CARDIO_QUESTIONS: CardioQuestion[] = [
   // Blok 1: Demografiya va Skrining (1-5)
   { id: 1,  block: "Demografiya va Skrining", type: "number",   question: "Yoshingiz nechada?", placeholder: "Yoshingizni kiriting" },
   { id: 2,  block: "Demografiya va Skrining", type: "select",   question: "Jinsingiz?", options: ["Erkak", "Ayol"] },
@@ -99,5 +99,8 @@ export const CARDIO_QUESTIONS: CardioQuestion[] = [
   { id: 49, block: "Turmush tarzi va Psixosomatika", type: "binary", question: "Ko'krak qafasidagi og'riq chuqur nafas olganda yoki tanani burgan daо'zgaradimi?" },
   { id: 50, block: "Turmush tarzi va Psixosomatika", type: "scale",  question: "Hayot sifati: Hozirgi sog'lig'ingiz sizni necha foiz qoniqtiradi?" },
 ];
+
+// Temporary limit: keep only one question in the questionnaire flow
+export const CARDIO_QUESTIONS: CardioQuestion[] = ALL_CARDIO_QUESTIONS.slice(0, 1);
 
 export const CARDIO_TOTAL = CARDIO_QUESTIONS.length;
