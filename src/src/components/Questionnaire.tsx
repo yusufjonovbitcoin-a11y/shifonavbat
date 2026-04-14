@@ -13,7 +13,11 @@ import { BodyMap } from "./BodyMap";
 import { buildAnamnesisContext } from "../lib/formatQuestionnaireForAi";
 import { buildScreeningQa } from "../lib/screeningFromAnswers";
 import { apiUrl } from "../lib/api";
-import { CARDIO_QUESTIONS as questions, CARDIO_TOTAL as TOTAL } from "../data/cardioQuestionnaire";
+import { CARDIO_QUESTIONS } from "../data/cardioQuestionnaire";
+
+const QUESTION_LIMIT = 1;
+const questions = CARDIO_QUESTIONS.slice(0, QUESTION_LIMIT);
+const TOTAL = questions.length;
 
 // Red flag question IDs
 const RED_FLAG_IDS = new Set([6, 8, 9, 10, 11, 12]);
